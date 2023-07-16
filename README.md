@@ -1,12 +1,12 @@
-### [commitlint](.github\workflows\commitlint.yml)
+### [commitlint](.github/workflows/commitlint.yml)
 
 Проверяет соответствия сообщений о коммитах формату conventional commits
 
-### [pull-request](.github\workflows\pull-request.yml)
+### [pull-request](.github/workflows/pull-request.yml)
 
 Запускает линтер и автотесты
 
-### [release](.github\workflows\release.yml)
+### [release](.github/workflows/release.yml)
 
 Создает релизную ветку, создает запись в реестре релизов (issues) со всей важной информацией, запускает проверки аналогичные pull-request и если они прошли выкладывает приложение на github-pages и закрывает issue
 
