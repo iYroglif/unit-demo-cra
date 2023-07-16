@@ -84,9 +84,9 @@ jobs:
               run: npm run build
 
             - name: Deploy
-              run: |
-                  git remote set-url origin https://git:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
-                  npx gh-pages -d build -u "github-actions-bot <support+actions@github.com>"
+              uses: JamesIves/github-pages-deploy-action@v4
+              with:
+                  folder: build
 
             - name: Close release issue
               if: ${{ success() }}
