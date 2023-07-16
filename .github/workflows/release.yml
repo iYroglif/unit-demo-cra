@@ -105,8 +105,21 @@ jobs:
                   git remote set-url origin https://git:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
                   npx gh-pages -d build -u "github-actions-bot <support+actions@github.com>"
 
-            - name: Close release issue
-              if: ${{ success() }}
+            - name: Get issue number
+              id: issue_number
               run: |
                   ISSUE_NUMBER=$(gh issue list --label RELEASE --search "${{ needs.release.outputs.tag }} in:title" --json number --jq '.[0].number')
-                  gh issue close ${ISSUE_NUMBER}
+                  echo "number=${ISSUE_NUMBER}" >> "$GITHUB_OUTPUT"
+
+            - name: Add issue comment after deploy
+              run: |
+                  gh issue comment ${{ steps.issue_number.outputs.number }} --body "Deploy: [github-pages](https://iyroglif.github.io/unit-demo-cra/)"
+
+            - name: Close release issue
+              if: ${{ success() }}
+              run: gh issue close ${{ steps.issue_number.outputs.number }}
+
+            - name: Create release
+              if: ${{ success() }}
+              run: |
+                  gh release create ${{ needs.release.outputs.tag }} --generate-notes
