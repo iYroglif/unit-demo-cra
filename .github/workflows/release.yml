@@ -18,6 +18,8 @@ jobs:
         steps:
             - name: Check out code
               uses: actions/checkout@v3
+              with:
+                  fetch-depth: 0
 
             - name: Get tags
               id: tags
@@ -34,7 +36,24 @@ jobs:
               id: changelog
               run: |
                   CHANGELOG=$(git log --pretty=format:"- %s" "${{ steps.tags.outputs.previous }}..${{ steps.tags.outputs.current }}")
-                  echo "changelog=${CHANGELOG}" >> "$GITHUB_OUTPUT"
+                  printf 'changelog<<EOF\n%s\nEOF' "${CHANGELOG}" >> "$GITHUB_OUTPUT"
+
+            - name: Generate issue body
+              id: issue_body
+              run: |
+                  ISSUE_BODY=$(cat << EOF
+                  Author: ${{ github.actor }}
+
+                  Date: $(git show -s --format=%ai ${{ steps.tags.outputs.current }})
+
+                  Version: ${{ steps.tags.outputs.current }}
+
+                  Changelog:
+                  ${{ steps.changelog.outputs.changelog }}
+
+                  EOF
+                  )
+                  printf 'body<<EOF\n%s\nEOF' "${ISSUE_BODY}" >> "$GITHUB_OUTPUT"
 
             - name: Check for existing release issue
               id: check_issue
@@ -46,9 +65,9 @@ jobs:
               run: |
                   RELEASE_DATE=$(git show -s --format=%ai ${CURRENT_TAG})
                   if [[ -z "${{ steps.check_issue.outputs.issue_number }}" ]]; then
-                    gh issue create --title "Release ${{ steps.tags.outputs.current }}" --body "Author: ${{ github.actor }} Date: ${RELEASE_DATE} Version: ${{ steps.tags.outputs.current }} Changelog: ${{ steps.changelog.outputs.changelog }}" --label RELEASE
+                    gh issue create --title "Release ${{ steps.tags.outputs.current }}" --body "${{ steps.issue_body.outputs.body }}" --label RELEASE
                   else
-                    gh issue edit ${{ steps.check_issue.outputs.issue_number }} --title "Release ${{ steps.tags.outputs.current }}" --body "Author: ${{ github.actor }} Date: ${RELEASE_DATE} Version: ${{ steps.tags.outputs.current }} Changelog: ${{ steps.changelog.outputs.changelog }}"
+                    gh issue edit ${{ steps.check_issue.outputs.issue_number }} --title "Release ${{ steps.tags.outputs.current }}" --body "${{ steps.issue_body.outputs.body }}"
                   fi
 
     test:
@@ -82,9 +101,9 @@ jobs:
               run: npm run build
 
             - name: Deploy
-              uses: JamesIves/github-pages-deploy-action@v4
-              with:
-                  folder: build
+              run: |
+                  git remote set-url origin https://git:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
+                  npx gh-pages -d build -u "github-actions-bot <support+actions@github.com>"
 
             - name: Close release issue
               if: ${{ success() }}
