@@ -1,0 +1,93 @@
+name: Release
+
+on:
+    push:
+        tags:
+            - "v[0-9]+"
+
+env:
+    GH_TOKEN: ${{ github.token }}
+
+permissions: write-all
+
+jobs:
+    release:
+        runs-on: ubuntu-latest
+        outputs:
+            tag: ${{ steps.tags.outputs.current }}
+        steps:
+            - name: Check out code
+              uses: actions/checkout@v3
+
+            - name: Get tags
+              id: tags
+              run: |
+                  echo "current=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+                  echo "previous=$(git describe --tags --abbrev=0 ${{ github.ref_name }}^)" >> "$GITHUB_OUTPUT"
+
+            - name: Create release branch
+              run: |
+                  git checkout -b release-${{ steps.tags.outputs.current }}
+                  git push origin release-${{ steps.tags.outputs.current }}
+
+            - name: Generate changelog
+              id: changelog
+              run: |
+                  CHANGELOG=$(git log --pretty=format:"- %s" "${{ steps.tags.outputs.previous }}..${{ steps.tags.outputs.current }}")
+                  echo "changelog=${CHANGELOG}" >> "$GITHUB_OUTPUT"
+
+            - name: Check for existing release issue
+              id: check_issue
+              run: |
+                  ISSUE_NUMBER=$(gh issue list --label RELEASE --search "${{ steps.tags.outputs.current }} in:title" --json number --jq '.[0].number')
+                  echo "issue_number=${ISSUE_NUMBER}" >> "$GITHUB_OUTPUT"
+
+            - name: Update existing release issue or create new one
+              run: |
+                  RELEASE_DATE=$(git show -s --format=%ai ${CURRENT_TAG})
+                  if [[ -z "${{ steps.check_issue.outputs.issue_number }}" ]]; then
+                    gh issue create --title "Release ${{ steps.tags.outputs.current }}" --body "Author: ${{ github.actor }} Date: ${RELEASE_DATE} Version: ${{ steps.tags.outputs.current }} Changelog: ${{ steps.changelog.outputs.changelog }}" --label RELEASE
+                  else
+                    gh issue edit ${{ steps.check_issue.outputs.issue_number }} --title "Release ${{ steps.tags.outputs.current }}" --body "Author: ${{ github.actor }} Date: ${RELEASE_DATE} Version: ${{ steps.tags.outputs.current }} Changelog: ${{ steps.changelog.outputs.changelog }}"
+                  fi
+
+    test:
+        needs: release
+        uses: ./.github/workflows/pull-request.yml
+
+    deploy:
+        needs: [release, test]
+        runs-on: ubuntu-latest
+        steps:
+            - name: Check out code
+              uses: actions/checkout@v3
+
+            - name: Set up Node.js 16
+              uses: actions/setup-node@v3
+              with:
+                  node-version: 16
+
+            - name: Cache dependencies
+              uses: actions/cache@v3
+              with:
+                  path: ~/.npm
+                  key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+                  restore-keys: |
+                      ${{ runner.os }}-node-
+
+            - name: Install dependencies
+              run: npm ci
+
+            - name: Build
+              run: npm run build
+
+            - name: Deploy
+              uses: JamesIves/github-pages-deploy-action@v4
+              with:
+                  folder: build
+
+            - name: Close release issue
+              if: ${{ success() }}
+              run: |
+                  ISSUE_NUMBER=$(gh issue list --label RELEASE --search "${{ needs.release.outputs.tag }} in:title" --json number --jq '.[0].number')
+                  gh issue close ${ISSUE_NUMBER}
